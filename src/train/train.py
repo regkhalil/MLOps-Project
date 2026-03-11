@@ -161,7 +161,7 @@ def train(data_bucket: str = DATA_BUCKET, model_bucket: str = MODEL_BUCKET) -> N
     print("\n" + "="*50)
     print("RESULTS SUMMARY")
     print("="*50)
-    sorted_results = sorted(results, key=lambda x: x["accuracy"], reverse=True)
+    sorted_results = sorted(results, key=lambda x: x["macro_f1"], reverse=True)
     for r in sorted_results:
         print(f"  {r['name']}: Accuracy={r['accuracy']:.4f}, F1={r['macro_f1']:.4f}")
     

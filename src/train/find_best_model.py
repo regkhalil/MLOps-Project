@@ -68,7 +68,7 @@ def list_all_models():
             "aliases": v.aliases,
         })
     
-    return sorted(models, key=lambda x: x["accuracy"] or 0, reverse=True)
+    return sorted(models, key=lambda x: x["macro_f1"] or 0, reverse=True)
 
 
 if __name__ == "__main__":
