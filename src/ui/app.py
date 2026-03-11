@@ -33,6 +33,20 @@ CATEGORIES = {
 st.set_page_config(page_title="20 Newsgroups Classifier", layout="wide")
 st.title("20 Newsgroups Text Classifier")
 
+# Display champion model info
+try:
+    info_resp = requests.get(f"{API_URL}/model-info", timeout=5)
+    if info_resp.ok:
+        info = info_resp.json()
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Champion Model", info.get("model_type", "N/A"))
+        c2.metric("Version", info.get("version", "N/A"))
+        c3.metric("Accuracy", f"{info.get('accuracy', 0):.2%}")
+        c4.metric("Macro F1", f"{info.get('macro_f1', 0):.2%}")
+        st.divider()
+except Exception:
+    st.warning("Could not load model info from API.")
+
 left, right = st.columns([1, 2])
 
 # Process the right column first so session_state is updated before rendering categories
