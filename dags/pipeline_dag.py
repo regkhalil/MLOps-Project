@@ -13,11 +13,13 @@ from airflow.providers.docker.operators.docker import DockerOperator
 
 PIPELINE_IMAGE = "mlops-pipeline:latest"
 
-# Environment variables passed to the pipeline containers for MinIO access
+# Environment variables passed to the pipeline containers
 PIPELINE_ENV = {
     "S3_ENDPOINT_URL": "http://minio:9000",
     "AWS_ACCESS_KEY_ID": "minioadmin",
     "AWS_SECRET_ACCESS_KEY": "minioadmin",
+    "MLFLOW_TRACKING_URI": "http://mlflow:5000",
+    "GIT_PYTHON_REFRESH": "quiet",
 }
 
 default_args = {

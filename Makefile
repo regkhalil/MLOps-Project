@@ -9,7 +9,6 @@ dev: pipeline-build build
 	@echo "  MinIO Console: http://localhost:9001  (minioadmin / minioadmin)"
 	@echo "  MLflow UI:     http://localhost:5000"
 	@echo ""
-	uv run mlflow ui --host 0.0.0.0 --port 5000 &
 
 # Build the standalone pipeline image
 pipeline-build:
