@@ -165,22 +165,45 @@ def train(data_bucket: str = DATA_BUCKET, model_bucket: str = MODEL_BUCKET) -> N
     for r in sorted_results:
         print(f"  {r['name']}: Accuracy={r['accuracy']:.4f}, F1={r['macro_f1']:.4f}")
     
-    # Save best model to S3 as well
+    # Compare best new model against existing champion and update if better
     best = sorted_results[0]
-    
-    # Set best model as "champion" alias in Model Registry
     mlflow_client = MlflowClient()
     model_name = "20newsgroups-classifier"
+
+    # Find the model version corresponding to the best run in this batch
     versions = mlflow_client.search_model_versions(f"name='{model_name}'")
-    
+    best_version = None
     for v in versions:
         if v.run_id == best["run_id"]:
-            mlflow_client.set_registered_model_alias(model_name, "champion", v.version)
-            print(f"\n*** BEST MODEL: {best['name']} (version {v.version}) -> alias 'champion' ***")
+            best_version = v.version
             break
-    
-    print("\nAll models registered in MLflow. API can load best with alias 'champion'.")
-    print(f"Best model saved to s3://{model_bucket}/classifier.pkl")
+
+    if best_version is None:
+        print(f"\nWarning: Could not find model version for run {best['run_id']}")
+    else:
+        # Check if a champion already exists
+        champion_f1 = None
+        try:
+            champion_info = mlflow_client.get_model_version_by_alias(model_name, "champion")
+            champion_run = mlflow_client.get_run(champion_info.run_id)
+            champion_f1 = champion_run.data.metrics.get("macro_f1")
+            print(f"\nExisting champion: version {champion_info.version} "
+                  f"(macro_f1={champion_f1})")
+        except Exception:
+            print("\nNo existing champion found.")
+
+        if champion_f1 is None or best["macro_f1"] > champion_f1:
+            mlflow_client.set_registered_model_alias(
+                model_name, "champion", best_version
+            )
+            print(f"*** NEW CHAMPION: {best['name']} version {best_version} "
+                  f"(macro_f1={best['macro_f1']:.4f}) ***")
+        else:
+            print(f"Current champion (macro_f1={champion_f1:.4f}) is still better "
+                  f"than best new model {best['name']} (macro_f1={best['macro_f1']:.4f}). "
+                  f"Champion unchanged.")
+
+    print("\nAll models registered in MLflow.")
 
 
 if __name__ == "__main__":

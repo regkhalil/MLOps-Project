@@ -84,18 +84,20 @@ def load_model():
     model_uri = f"models:/{MODEL_NAME}@champion"
     
     try:
-        model = mlflow.sklearn.load_model(model_uri)
-        # Log which model version we loaded
+        loaded = mlflow.sklearn.load_model(model_uri)
         client = MlflowClient()
         alias_info = client.get_model_version_by_alias(MODEL_NAME, "champion")
         print(f"Loaded model: {MODEL_NAME} version {alias_info.version} (champion)")
-        return model
+        return loaded
     except Exception as e:
-        # Fallback: load latest version if champion alias not set
         print(f"Warning: Could not load champion alias: {e}")
         print("Falling back to latest version...")
-        model_uri = f"models:/{MODEL_NAME}/latest"
-        return mlflow.sklearn.load_model(model_uri)
+        try:
+            model_uri = f"models:/{MODEL_NAME}/latest"
+            return mlflow.sklearn.load_model(model_uri)
+        except Exception as e2:
+            print(f"Warning: No model available yet: {e2}")
+            return None
 
 
 @app.on_event("startup")
