@@ -14,6 +14,8 @@ import json
 import re
 from pathlib import Path
 
+import mlflow
+
 
 def clean_text(text: str) -> str:
     """Clean a single document."""
@@ -41,34 +43,41 @@ def preprocess(data_dir: Path, output_dir: Path) -> None:
     """Load raw data, clean it, and save."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    for subset in ("train", "test"):
-        raw_path = data_dir / f"raw_{subset}.json"
-        with open(raw_path, "r", encoding="utf-8") as f:
-            raw = json.load(f)
+    mlflow.set_experiment("20newsgroups-tfidf")
 
-        cleaned_data = []
-        cleaned_targets = []
+    with mlflow.start_run(run_name="preprocessing"):
+        mlflow.log_param("min_doc_length", 10)
 
-        for text, target in zip(raw["data"], raw["target"]):
-            cleaned = clean_text(text)
-            if len(cleaned) >= 10:
-                cleaned_data.append(cleaned)
-                cleaned_targets.append(target)
+        for subset in ("train", "test"):
+            raw_path = data_dir / f"raw_{subset}.json"
+            with open(raw_path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
 
-        records = {
-            "data": cleaned_data,
-            "target": cleaned_targets,
-            "target_names": raw["target_names"],
-        }
+            cleaned_data = []
+            cleaned_targets = []
 
-        out_path = output_dir / f"clean_{subset}.json"
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(records, f)
+            for text, target in zip(raw["data"], raw["target"]):
+                cleaned = clean_text(text)
+                if len(cleaned) >= 10:
+                    cleaned_data.append(cleaned)
+                    cleaned_targets.append(target)
 
-        dropped = len(raw["data"]) - len(cleaned_data)
-        print(
-            f"[{subset}] {len(cleaned_data)} docs kept, {dropped} dropped → {out_path}"
-        )
+            records = {
+                "data": cleaned_data,
+                "target": cleaned_targets,
+                "target_names": raw["target_names"],
+            }
+
+            out_path = output_dir / f"clean_{subset}.json"
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(records, f)
+
+            dropped = len(raw["data"]) - len(cleaned_data)
+            mlflow.log_metric(f"{subset}_docs_kept", len(cleaned_data))
+            mlflow.log_metric(f"{subset}_docs_dropped", dropped)
+            print(
+                f"[{subset}] {len(cleaned_data)} docs kept, {dropped} dropped → {out_path}"
+            )
 
 
 if __name__ == "__main__":
