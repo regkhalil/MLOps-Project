@@ -10,8 +10,6 @@ Pipeline:
 """
 
 import argparse
-import json
-from pathlib import Path
 
 import mlflow
 import mlflow.sklearn
@@ -20,20 +18,35 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import classification_report
 from sklearn.pipeline import Pipeline
 
+from src.storage import (
+    download_json,
+    ensure_bucket,
+    get_s3_client,
+    upload_pickle,
+    upload_text,
+)
 
-def load_split(path: Path) -> tuple[list[str], list[int], list[str]]:
-    """Load a cleaned JSON split and return (texts, targets, target_names)."""
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+DATA_BUCKET = "data"
+MODEL_BUCKET = "models"
+
+
+def load_split(client, bucket: str, key: str) -> tuple[list[str], list[int], list[str]]:
+    """Load a cleaned JSON split from S3 and return (texts, targets, target_names)."""
+    data = download_json(client, bucket, key)
     return data["data"], data["target"], data["target_names"]
 
 
-def train(data_dir: Path, model_dir: Path) -> None:
+def train(data_bucket: str = DATA_BUCKET, model_bucket: str = MODEL_BUCKET) -> None:
     """Train and evaluate the TF-IDF classification pipeline."""
+    client = get_s3_client()
+    ensure_bucket(client, model_bucket)
+
     train_texts, train_targets, target_names = load_split(
-        data_dir / "clean_train.json"
+        client, data_bucket, "clean/clean_train.json"
     )
-    test_texts, test_targets, _ = load_split(data_dir / "clean_test.json")
+    test_texts, test_targets, _ = load_split(
+        client, data_bucket, "clean/clean_test.json"
+    )
 
     print(f"Training samples: {len(train_texts)}")
     print(f"Test samples:     {len(test_texts)}")
@@ -108,18 +121,26 @@ def train(data_dir: Path, model_dir: Path) -> None:
         # Log the sklearn pipeline as an MLflow model
         mlflow.sklearn.log_model(pipeline, "model")
 
-        # Save classification report as artifact
-        model_dir.mkdir(parents=True, exist_ok=True)
-        report_path = model_dir / "classification_report.txt"
+        # Upload model to MinIO
+        upload_pickle(client, model_bucket, "tfidf_classifier.pkl", pipeline)
+
+        # Upload classification report to MinIO and log as MLflow artifact
         report_text = classification_report(
             test_targets, predictions, target_names=target_names
         )
-        with open(report_path, "w", encoding="utf-8") as f:
-            f.write(report_text)
-        mlflow.log_artifact(str(report_path))
+        upload_text(client, model_bucket, "classification_report.txt", report_text)
+
+        # Also log report as MLflow artifact (write temp file)
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "classification_report.txt"
+            report_path.write_text(report_text, encoding="utf-8")
+            mlflow.log_artifact(str(report_path))
 
         print(f"\nMLflow run ID: {mlflow.active_run().info.run_id}")
-        print(f"Artifacts saved to {model_dir}")
+        print(f"Model saved to s3://{model_bucket}/tfidf_classifier.pkl")
 
 
 if __name__ == "__main__":
@@ -127,16 +148,14 @@ if __name__ == "__main__":
         description="Train TF-IDF classifier on 20 Newsgroups"
     )
     parser.add_argument(
-        "--data-dir",
-        type=Path,
-        default=Path("data"),
-        help="Directory with cleaned data (default: data/)",
+        "--data-bucket",
+        default=DATA_BUCKET,
+        help=f"S3 bucket for cleaned data (default: {DATA_BUCKET})",
     )
     parser.add_argument(
-        "--model-dir",
-        type=Path,
-        default=Path("models"),
-        help="Directory to save trained model (default: models/)",
+        "--model-bucket",
+        default=MODEL_BUCKET,
+        help=f"S3 bucket for trained model (default: {MODEL_BUCKET})",
     )
     args = parser.parse_args()
-    train(args.data_dir, args.model_dir)
+    train(args.data_bucket, args.model_bucket)

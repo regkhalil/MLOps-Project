@@ -1,19 +1,22 @@
 """
-Download the 20 Newsgroups dataset and save the raw data to disk.
+Download the 20 Newsgroups dataset and upload the raw data to MinIO.
 Uses scikit-learn's fetch_20newsgroups which provides the same dataset
 as https://www.kaggle.com/datasets/au1206/20-newsgroup-original
 """
 
 import argparse
-import json
-from pathlib import Path
 
 from sklearn.datasets import fetch_20newsgroups
 
+from src.storage import ensure_bucket, get_s3_client, upload_json
 
-def download(data_dir: Path) -> None:
-    """Download train and test splits and persist as JSON."""
-    data_dir.mkdir(parents=True, exist_ok=True)
+DATA_BUCKET = "data"
+
+
+def download(bucket: str = DATA_BUCKET) -> None:
+    """Download train and test splits and upload to MinIO."""
+    client = get_s3_client()
+    ensure_bucket(client, bucket)
 
     for subset in ("train", "test"):
         data = fetch_20newsgroups(subset=subset, remove=())
@@ -22,19 +25,17 @@ def download(data_dir: Path) -> None:
             "target": data.target.tolist(),
             "target_names": data.target_names,
         }
-        out_path = data_dir / f"raw_{subset}.json"
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(records, f)
-        print(f"Saved {len(data.data)} documents to {out_path}")
+        key = f"raw/raw_{subset}.json"
+        upload_json(client, bucket, key, records)
+        print(f"Saved {len(data.data)} documents to s3://{bucket}/{key}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download 20 Newsgroups dataset")
     parser.add_argument(
-        "--data-dir",
-        type=Path,
-        default=Path("data"),
-        help="Directory to save raw data (default: data/)",
+        "--bucket",
+        default=DATA_BUCKET,
+        help=f"S3 bucket for raw data (default: {DATA_BUCKET})",
     )
     args = parser.parse_args()
-    download(args.data_dir)
+    download(args.bucket)

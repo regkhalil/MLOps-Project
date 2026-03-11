@@ -10,11 +10,18 @@ Steps:
 """
 
 import argparse
-import json
 import re
-from pathlib import Path
 
 import mlflow
+
+from src.storage import (
+    download_json,
+    ensure_bucket,
+    get_s3_client,
+    upload_json,
+)
+
+DATA_BUCKET = "data"
 
 
 def clean_text(text: str) -> str:
@@ -39,9 +46,10 @@ def clean_text(text: str) -> str:
     return body
 
 
-def preprocess(data_dir: Path, output_dir: Path) -> None:
-    """Load raw data, clean it, and save."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+def preprocess(bucket: str = DATA_BUCKET) -> None:
+    """Load raw data from MinIO, clean it, and upload back."""
+    client = get_s3_client()
+    ensure_bucket(client, bucket)
 
     mlflow.set_experiment("20newsgroups-tfidf")
 
@@ -49,9 +57,7 @@ def preprocess(data_dir: Path, output_dir: Path) -> None:
         mlflow.log_param("min_doc_length", 10)
 
         for subset in ("train", "test"):
-            raw_path = data_dir / f"raw_{subset}.json"
-            with open(raw_path, "r", encoding="utf-8") as f:
-                raw = json.load(f)
+            raw = download_json(client, bucket, f"raw/raw_{subset}.json")
 
             cleaned_data = []
             cleaned_targets = []
@@ -68,31 +74,23 @@ def preprocess(data_dir: Path, output_dir: Path) -> None:
                 "target_names": raw["target_names"],
             }
 
-            out_path = output_dir / f"clean_{subset}.json"
-            with open(out_path, "w", encoding="utf-8") as f:
-                json.dump(records, f)
+            key = f"clean/clean_{subset}.json"
+            upload_json(client, bucket, key, records)
 
             dropped = len(raw["data"]) - len(cleaned_data)
             mlflow.log_metric(f"{subset}_docs_kept", len(cleaned_data))
             mlflow.log_metric(f"{subset}_docs_dropped", dropped)
             print(
-                f"[{subset}] {len(cleaned_data)} docs kept, {dropped} dropped → {out_path}"
+                f"[{subset}] {len(cleaned_data)} docs kept, {dropped} dropped → s3://{bucket}/{key}"
             )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preprocess 20 Newsgroups data")
     parser.add_argument(
-        "--data-dir",
-        type=Path,
-        default=Path("data"),
-        help="Directory with raw data (default: data/)",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path("data"),
-        help="Directory for cleaned data (default: data/)",
+        "--bucket",
+        default=DATA_BUCKET,
+        help=f"S3 bucket for data (default: {DATA_BUCKET})",
     )
     args = parser.parse_args()
-    preprocess(args.data_dir, args.output_dir)
+    preprocess(args.bucket)
