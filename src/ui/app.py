@@ -35,15 +35,7 @@ st.title("20 Newsgroups Text Classifier")
 
 left, right = st.columns([1, 2])
 
-with left:
-    st.subheader("Categories")
-    predicted_label = st.session_state.get("predicted_label")
-    for key, display in CATEGORIES.items():
-        if key == predicted_label:
-            st.markdown(f"**:green[► {display}]**")
-        else:
-            st.markdown(f"- {display}")
-
+# Process the right column first so session_state is updated before rendering categories
 with right:
     st.subheader("Classify Text")
     text = st.text_area(
@@ -71,5 +63,11 @@ with right:
             except requests.exceptions.HTTPError as e:
                 st.error(f"API error: {e}")
 
-    if predicted_label and not st.session_state.get("_just_classified"):
-        st.info(f"Last prediction: **{CATEGORIES.get(predicted_label, predicted_label)}**")
+with left:
+    st.subheader("Categories")
+    predicted_label = st.session_state.get("predicted_label")
+    for key, display in CATEGORIES.items():
+        if key == predicted_label:
+            st.markdown(f"**:green[► {display}]**")
+        else:
+            st.markdown(f"- {display}")
