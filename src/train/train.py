@@ -167,9 +167,6 @@ def train(data_bucket: str = DATA_BUCKET, model_bucket: str = MODEL_BUCKET) -> N
     
     # Save best model to S3 as well
     best = sorted_results[0]
-    best_run = mlflow.get_run(best["run_id"])
-    best_model = mlflow.sklearn.load_model(f"runs:/{best['run_id']}/model")
-    upload_pickle(client, model_bucket, "classifier.pkl", best_model)
     
     # Set best model as "champion" alias in Model Registry
     mlflow_client = MlflowClient()
