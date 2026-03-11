@@ -1,17 +1,19 @@
 """
 FastAPI service for 20 Newsgroups text classification.
 
-Loads the latest model from MLflow and serves predictions.
+Loads the BEST model (champion alias) from MLflow Model Registry.
 """
 
 import os
 
+import mlflow
 import mlflow.sklearn
+from mlflow.tracking import MlflowClient
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
-EXPERIMENT_NAME = "20newsgroups-tfidf"
+MODEL_NAME = "20newsgroups-classifier"  # Registered model name in Model Registry
 
 TARGET_NAMES = [
     "alt.atheism",
@@ -51,23 +53,25 @@ class PredictResponse(BaseModel):
 
 
 def load_model():
-    """Load the latest model from the MLflow experiment."""
+    """Load the BEST model using the 'champion' alias from MLflow Model Registry."""
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
-    if experiment is None:
-        raise RuntimeError(f"Experiment '{EXPERIMENT_NAME}' not found in MLflow")
-
-    runs = mlflow.search_runs(
-        experiment_ids=[experiment.experiment_id],
-        order_by=["start_time DESC"],
-        max_results=1,
-    )
-    if runs.empty:
-        raise RuntimeError("No runs found in the experiment")
-
-    run_id = runs.iloc[0]["run_id"]
-    model_uri = f"runs:/{run_id}/model"
-    return mlflow.sklearn.load_model(model_uri)
+    
+    # Load model with "champion" alias (set during training to best accuracy)
+    model_uri = f"models:/{MODEL_NAME}@champion"
+    
+    try:
+        model = mlflow.sklearn.load_model(model_uri)
+        # Log which model version we loaded
+        client = MlflowClient()
+        alias_info = client.get_model_version_by_alias(MODEL_NAME, "champion")
+        print(f"Loaded model: {MODEL_NAME} version {alias_info.version} (champion)")
+        return model
+    except Exception as e:
+        # Fallback: load latest version if champion alias not set
+        print(f"Warning: Could not load champion alias: {e}")
+        print("Falling back to latest version...")
+        model_uri = f"models:/{MODEL_NAME}/latest"
+        return mlflow.sklearn.load_model(model_uri)
 
 
 @app.on_event("startup")
@@ -79,6 +83,27 @@ def startup():
 @app.get("/health")
 def health():
     return {"status": "ok", "model_loaded": model is not None}
+
+
+@app.get("/model-info")
+def model_info():
+    """Get information about the currently loaded model."""
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    client = MlflowClient()
+    try:
+        alias_info = client.get_model_version_by_alias(MODEL_NAME, "champion")
+        run = client.get_run(alias_info.run_id)
+        return {
+            "model_name": MODEL_NAME,
+            "version": alias_info.version,
+            "alias": "champion",
+            "run_id": alias_info.run_id,
+            "accuracy": run.data.metrics.get("accuracy"),
+            "macro_f1": run.data.metrics.get("macro_f1"),
+            "model_type": run.data.params.get("model"),
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.post("/predict", response_model=PredictResponse)
