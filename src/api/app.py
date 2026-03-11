@@ -38,6 +38,29 @@ TARGET_NAMES = [
     "talk.religion.misc",
 ]
 
+DISPLAY_NAMES = {
+    "alt.atheism": "Atheism & Secularism",
+    "comp.graphics": "Computer Graphics",
+    "comp.os.ms-windows.misc": "Windows OS",
+    "comp.sys.ibm.pc.hardware": "PC Hardware",
+    "comp.sys.mac.hardware": "Mac Hardware",
+    "comp.windows.x": "X Window System",
+    "misc.forsale": "For Sale",
+    "rec.autos": "Automobiles",
+    "rec.motorcycles": "Motorcycles",
+    "rec.sport.baseball": "Baseball",
+    "rec.sport.hockey": "Hockey",
+    "sci.crypt": "Cryptography",
+    "sci.electronics": "Electronics",
+    "sci.med": "Medicine & Health",
+    "sci.space": "Space & Astronomy",
+    "soc.religion.christian": "Christianity",
+    "talk.politics.guns": "Gun Politics",
+    "talk.politics.mideast": "Middle East Politics",
+    "talk.politics.misc": "General Politics",
+    "talk.religion.misc": "Religion & Beliefs",
+}
+
 app = FastAPI(title="20 Newsgroups Classifier", version="1.0.0")
 
 model = None
@@ -49,6 +72,7 @@ class PredictRequest(BaseModel):
 
 class PredictResponse(BaseModel):
     label: str
+    display_name: str
     class_id: int
 
 
@@ -111,4 +135,9 @@ def predict(request: PredictRequest):
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     class_id = int(model.predict([request.text])[0])
-    return PredictResponse(label=TARGET_NAMES[class_id], class_id=class_id)
+    label = TARGET_NAMES[class_id]
+    return PredictResponse(
+        label=label,
+        display_name=DISPLAY_NAMES[label],
+        class_id=class_id,
+    )
