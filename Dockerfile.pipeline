@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY pyproject.toml .
+RUN pip install --no-cache-dir \
+    "boto3>=1.42.65" \
+    "mlflow>=2.10" \
+    "pandas<3" \
+    "scikit-learn>=1.8.0"
+
+COPY src/ src/
