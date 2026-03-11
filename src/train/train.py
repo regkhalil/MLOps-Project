@@ -52,6 +52,8 @@ def train(data_bucket: str = DATA_BUCKET, model_bucket: str = MODEL_BUCKET) -> N
     print(f"Test samples:     {len(test_texts)}")
     print(f"Classes:          {len(target_names)}")
 
+    ensure_bucket(client, "mlflow-artifacts")
+
     mlflow.set_experiment("20newsgroups-tfidf")
 
     with mlflow.start_run(run_name="training"):

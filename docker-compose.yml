@@ -37,19 +37,29 @@ services:
       retries: 5
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.19.0
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
     container_name: mlops-mlflow
     ports:
       - "5000:5000"
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
     command: >
       mlflow server
       --host 0.0.0.0
       --port 5000
       --backend-store-uri sqlite:///mlflow/mlflow.db
-      --default-artifact-root /mlflow/artifacts
+      --default-artifact-root mlflow-artifacts:/
+      --artifacts-destination s3://mlflow-artifacts/
       --serve-artifacts
     volumes:
       - mlflow_data:/mlflow
+    depends_on:
+      minio:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:5000/health"]
       interval: 10s
