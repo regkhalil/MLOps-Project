@@ -124,7 +124,7 @@ def train(data_bucket: str = DATA_BUCKET, model_bucket: str = MODEL_BUCKET) -> N
         mlflow.sklearn.log_model(pipeline, "model")
 
         # Upload model to MinIO
-        upload_pickle(client, model_bucket, "tfidf_classifier.pkl", pipeline)
+        upload_pickle(client, model_bucket, "classifier.pkl", pipeline)
 
         # Upload classification report to MinIO and log as MLflow artifact
         report_text = classification_report(
@@ -142,7 +142,7 @@ def train(data_bucket: str = DATA_BUCKET, model_bucket: str = MODEL_BUCKET) -> N
             mlflow.log_artifact(str(report_path))
 
         print(f"\nMLflow run ID: {mlflow.active_run().info.run_id}")
-        print(f"Model saved to s3://{model_bucket}/tfidf_classifier.pkl")
+        print(f"Model saved to s3://{model_bucket}/classifier.pkl")
 
 
 if __name__ == "__main__":
