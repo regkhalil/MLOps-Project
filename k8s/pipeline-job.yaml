@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pipeline-run
+  namespace: mlops
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: download
+          image: mlops-pipeline:latest
+          imagePullPolicy: Never
+          command: ["python", "-m", "src.preprocess.download"]
+          env: &pipeline-env
+            - name: S3_ENDPOINT_URL
+              value: http://minio.mlops.svc.cluster.local:9000
+            - name: AWS_ACCESS_KEY_ID
+              value: minioadmin
+            - name: AWS_SECRET_ACCESS_KEY
+              value: minioadmin
+            - name: MLFLOW_TRACKING_URI
+              value: http://mlflow.mlops.svc.cluster.local:5000
+            - name: GIT_PYTHON_REFRESH
+              value: quiet
+        - name: preprocess
+          image: mlops-pipeline:latest
+          imagePullPolicy: Never
+          command: ["python", "-m", "src.preprocess.preprocess"]
+          env: *pipeline-env
+      containers:
+        - name: train
+          image: mlops-pipeline:latest
+          imagePullPolicy: Never
+          command: ["python", "-m", "src.train.train"]
+          env: *pipeline-env

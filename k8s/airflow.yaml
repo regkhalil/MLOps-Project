@@ -1,0 +1,262 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: airflow
+  namespace: mlops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: airflow-pod-launcher
+  namespace: mlops
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, pods/status]
+    verbs: [get, list, watch, create, delete, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: airflow-pod-launcher
+  namespace: mlops
+subjects:
+  - kind: ServiceAccount
+    name: airflow
+    namespace: mlops
+roleRef:
+  kind: Role
+  name: airflow-pod-launcher
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: airflow-pvc
+  namespace: mlops
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-dags
+  namespace: mlops
+data:
+  pipeline_dag_k8s.py: |
+    """
+    Airflow DAG: 20 Newsgroups TF-IDF Pipeline (Kubernetes)
+
+    Runs weekly: download -> preprocess -> train
+
+    Each task runs as a Kubernetes Pod using KubernetesPodOperator.
+    """
+
+    from datetime import datetime, timedelta
+
+    from airflow import DAG
+    from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
+
+    PIPELINE_IMAGE = "mlops-pipeline:latest"
+    NAMESPACE = "mlops"
+
+    PIPELINE_ENV_VARS = {
+        "S3_ENDPOINT_URL": "http://minio.mlops.svc.cluster.local:9000",
+        "AWS_ACCESS_KEY_ID": "minioadmin",
+        "AWS_SECRET_ACCESS_KEY": "minioadmin",
+        "MLFLOW_TRACKING_URI": "http://mlflow.mlops.svc.cluster.local:5000",
+        "GIT_PYTHON_REFRESH": "quiet",
+    }
+
+    default_args = {
+        "owner": "mlops",
+        "retries": 1,
+        "retry_delay": timedelta(minutes=5),
+    }
+
+    with DAG(
+        dag_id="newsgroups_tfidf_pipeline",
+        default_args=default_args,
+        description="Weekly 20 Newsgroups TF-IDF classification pipeline",
+        schedule="@weekly",
+        start_date=datetime(2025, 1, 1),
+        catchup=False,
+        tags=["mlops", "nlp"],
+    ) as dag:
+
+        download = KubernetesPodOperator(
+            task_id="download",
+            name="pipeline-download",
+            namespace=NAMESPACE,
+            image=PIPELINE_IMAGE,
+            cmds=["python", "-m", "src.preprocess.download"],
+            env_vars=PIPELINE_ENV_VARS,
+            image_pull_policy="Never",
+            is_delete_operator_pod=True,
+            get_logs=True,
+            startup_timeout_seconds=300,
+        )
+
+        preprocess = KubernetesPodOperator(
+            task_id="preprocess",
+            name="pipeline-preprocess",
+            namespace=NAMESPACE,
+            image=PIPELINE_IMAGE,
+            cmds=["python", "-m", "src.preprocess.preprocess"],
+            env_vars=PIPELINE_ENV_VARS,
+            image_pull_policy="Never",
+            is_delete_operator_pod=True,
+            get_logs=True,
+            startup_timeout_seconds=300,
+        )
+
+        train = KubernetesPodOperator(
+            task_id="train",
+            name="pipeline-train",
+            namespace=NAMESPACE,
+            image=PIPELINE_IMAGE,
+            cmds=["python", "-m", "src.train.train"],
+            env_vars=PIPELINE_ENV_VARS,
+            image_pull_policy="Never",
+            is_delete_operator_pod=True,
+            get_logs=True,
+            startup_timeout_seconds=300,
+        )
+
+        download >> preprocess >> train
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: airflow-init
+  namespace: mlops
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      serviceAccountName: airflow
+      restartPolicy: OnFailure
+      containers:
+        - name: init
+          image: mlops-airflow-k8s:latest
+          imagePullPolicy: Never
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              airflow db migrate && \
+              airflow users create \
+                --username admin \
+                --password admin \
+                --firstname Admin \
+                --lastname User \
+                --role Admin \
+                --email admin@example.com || true
+          env:
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: SequentialExecutor
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: sqlite:////opt/airflow/airflow.db
+            - name: AIRFLOW__CORE__LOAD_EXAMPLES
+              value: "false"
+            - name: AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION
+              value: "false"
+          volumeMounts:
+            - name: airflow-data
+              mountPath: /opt/airflow
+            - name: dags
+              mountPath: /opt/airflow/dags/pipeline_dag_k8s.py
+              subPath: pipeline_dag_k8s.py
+      volumes:
+        - name: airflow-data
+          persistentVolumeClaim:
+            claimName: airflow-pvc
+        - name: dags
+          configMap:
+            name: airflow-dags
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow
+  namespace: mlops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow
+  template:
+    metadata:
+      labels:
+        app: airflow
+    spec:
+      serviceAccountName: airflow
+      initContainers:
+        - name: wait-for-db
+          image: mlops-airflow-k8s:latest
+          imagePullPolicy: Never
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              until airflow db check; do
+                echo "Waiting for DB to be ready..."
+                sleep 5
+              done
+          env: &airflow-env
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: SequentialExecutor
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: sqlite:////opt/airflow/airflow.db
+            - name: AIRFLOW__CORE__LOAD_EXAMPLES
+              value: "false"
+            - name: AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION
+              value: "false"
+          volumeMounts: &airflow-mounts
+            - name: airflow-data
+              mountPath: /opt/airflow
+            - name: dags
+              mountPath: /opt/airflow/dags/pipeline_dag_k8s.py
+              subPath: pipeline_dag_k8s.py
+      containers:
+        - name: webserver
+          image: mlops-airflow-k8s:latest
+          imagePullPolicy: Never
+          args: ["webserver"]
+          env: *airflow-env
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          volumeMounts: *airflow-mounts
+        - name: scheduler
+          image: mlops-airflow-k8s:latest
+          imagePullPolicy: Never
+          args: ["scheduler"]
+          env: *airflow-env
+          volumeMounts: *airflow-mounts
+      volumes:
+        - name: airflow-data
+          persistentVolumeClaim:
+            claimName: airflow-pvc
+        - name: dags
+          configMap:
+            name: airflow-dags
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow
+  namespace: mlops
+spec:
+  selector:
+    app: airflow
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30080
+  type: NodePort

@@ -1,0 +1,29 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraConfig:
+            nodeStatusUpdateFrequency: 10s
+    extraPortMappings:
+      - containerPort: 30000
+        hostPort: 9000
+        protocol: TCP
+      - containerPort: 30001
+        hostPort: 9001
+        protocol: TCP
+      - containerPort: 30050
+        hostPort: 5000
+        protocol: TCP
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+      - containerPort: 30800
+        hostPort: 8000
+        protocol: TCP
+      - containerPort: 30850
+        hostPort: 8501
+        protocol: TCP
