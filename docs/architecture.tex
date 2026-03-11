@@ -1,0 +1,271 @@
+\documentclass[border=15pt]{standalone}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{
+  positioning,
+  arrows.meta,
+  shapes.geometric,
+  fit,
+  backgrounds,
+  calc,
+  decorations.pathreplacing
+}
+
+% ── Colour Palette ──────────────────────────────────────────────
+\definecolor{airflowBg}{HTML}{017CEE}    % Airflow blue
+\definecolor{pipelineBg}{HTML}{2E86C1}   % Pipeline step blue
+\definecolor{minioBg}{HTML}{C72C48}      % MinIO red
+\definecolor{mlflowBg}{HTML}{0194E2}     % MLflow cyan
+\definecolor{apiBg}{HTML}{009688}        % FastAPI teal
+\definecolor{uiBg}{HTML}{FF4B4B}         % Streamlit red
+\definecolor{k8sBg}{HTML}{326CE5}        % Kubernetes blue
+\definecolor{dockerBg}{HTML}{2496ED}     % Docker blue
+\definecolor{infraBorder}{HTML}{B0BEC5}
+\definecolor{storageBg}{HTML}{FFF3E0}
+\definecolor{servingBg}{HTML}{E8F5E9}
+\definecolor{orchBg}{HTML}{E3F2FD}
+
+% ── Styles ──────────────────────────────────────────────────────
+\tikzset{
+  base/.style={
+    draw, rounded corners=4pt, align=center,
+    font=\sffamily\small, minimum height=1cm, minimum width=3cm,
+    line width=0.6pt,
+  },
+  airflow/.style={
+    base, fill=airflowBg!15, draw=airflowBg!80,
+    minimum width=12cm, minimum height=1.2cm,
+    font=\sffamily\bfseries\small,
+  },
+  pipeline/.style={
+    base, fill=pipelineBg!15, draw=pipelineBg!70,
+    minimum width=3cm, minimum height=1.6cm,
+  },
+  storage/.style={
+    base, fill=minioBg!12, draw=minioBg!70,
+    minimum width=4.2cm, minimum height=2.2cm,
+  },
+  mlflow/.style={
+    base, fill=mlflowBg!12, draw=mlflowBg!70,
+    minimum width=4.2cm, minimum height=2.2cm,
+  },
+  api/.style={
+    base, fill=apiBg!15, draw=apiBg!70,
+    minimum width=3.6cm, minimum height=1.6cm,
+  },
+  ui/.style={
+    base, fill=uiBg!12, draw=uiBg!70,
+    minimum width=3.6cm, minimum height=1.6cm,
+  },
+  arrow/.style={
+    -{Stealth[length=6pt]}, line width=0.8pt, color=#1,
+  },
+  arrow/.default=black!70,
+  dashedarrow/.style={
+    -{Stealth[length=6pt]}, line width=0.8pt, dashed, color=#1,
+  },
+  dashedarrow/.default=black!50,
+  grouplabel/.style={
+    font=\sffamily\bfseries\footnotesize, text=black!60,
+  },
+  techlabel/.style={
+    font=\sffamily\scriptsize, text=black!50,
+  },
+  portlabel/.style={
+    font=\sffamily\tiny\itshape, text=black!45,
+  },
+  zone/.style={
+    draw=infraBorder, dashed, rounded corners=8pt, line width=0.8pt,
+    inner sep=12pt,
+  },
+}
+
+\begin{document}
+\begin{tikzpicture}[node distance=1.2cm and 1.4cm]
+
+% ════════════════════════════════════════════════════════════════
+%  ORCHESTRATION LAYER
+% ════════════════════════════════════════════════════════════════
+\node[airflow] (airflow)
+  {\textsf{Apache Airflow} \\[1pt]
+   {\scriptsize Scheduler + Webserver\quad|\quad @weekly DAG}};
+\node[portlabel, above right=0pt and 0pt of airflow.north east, anchor=south east]
+  {:8080};
+
+% ════════════════════════════════════════════════════════════════
+%  PIPELINE TASKS
+% ════════════════════════════════════════════════════════════════
+\node[pipeline, below left=1.6cm and 3cm of airflow.south] (download)
+  {\textbf{Download}\\[2pt]
+   {\scriptsize fetch\_20newsgroups}\\
+   {\scriptsize → s3://data/raw/}};
+
+\node[pipeline, right=1cm of download] (preprocess)
+  {\textbf{Preprocess}\\[2pt]
+   {\scriptsize text cleaning}\\
+   {\scriptsize → s3://data/clean/}};
+
+\node[pipeline, right=1cm of preprocess] (train)
+  {\textbf{Train}\\[2pt]
+   {\scriptsize 6 TF-IDF models}\\
+   {\scriptsize champion promotion}};
+
+% Task arrows
+\draw[arrow=pipelineBg!80] (download) -- (preprocess);
+\draw[arrow=pipelineBg!80] (preprocess) -- (train);
+
+% Airflow → tasks
+\draw[arrow=airflowBg] (airflow.south) -- ++(0,-0.5) -|
+  node[pos=0.25, above, techlabel] {DockerOperator / KubernetesPodOperator}
+  (download.north);
+\draw[arrow=airflowBg] (airflow.south) -- ++(0,-0.5) -| (preprocess.north);
+\draw[arrow=airflowBg] (airflow.south) -- ++(0,-0.5) -| (train.north);
+
+% ════════════════════════════════════════════════════════════════
+%  STORAGE LAYER
+% ════════════════════════════════════════════════════════════════
+\node[storage, below left=2.6cm and 0.2cm of preprocess.south] (minio)
+  {\textbf{MinIO}\\[2pt]
+   {\scriptsize S3-compatible object store}\\[1pt]
+   {\scriptsize \texttt{data/} · \texttt{models/} · \texttt{mlflow-artifacts/}}};
+\node[portlabel, below left=1pt and 1pt of minio.north east, anchor=north east]
+  {:9000 / :9001};
+
+\node[mlflow, right=1.5cm of minio] (mlflow)
+  {\textbf{MLflow Server}\\[2pt]
+   {\scriptsize Experiment tracking}\\
+   {\scriptsize + Model Registry}\\[1pt]
+   {\scriptsize SQLite backend · S3 artifacts}};
+\node[portlabel, below left=1pt and 1pt of mlflow.north east, anchor=north east]
+  {:5000};
+
+% Pipeline → Storage arrows
+\draw[arrow=minioBg!80]
+  (download.south) -- ++(0,-0.5) -| (minio.north -| download.south)
+  node[pos=0.25, right, techlabel] {raw JSON};
+\draw[arrow=minioBg!80]
+  (preprocess.south) -- ++(0,-0.4) -- (minio.north);
+\node[techlabel, left=0.1cm of minio.north, anchor=south east] {clean JSON};
+
+\draw[arrow=mlflowBg!80]
+  (train.south) -- ++(0,-0.6) -| (mlflow.north)
+  node[pos=0.25, right, techlabel] {params, metrics, models};
+
+% MLflow ↔ MinIO (artifact proxy)
+\draw[dashedarrow=black!50]
+  (mlflow.west) -- (minio.east)
+  node[midway, above, techlabel] {artifact proxy}
+  node[midway, below, techlabel] {s3://mlflow-artifacts/};
+
+% ════════════════════════════════════════════════════════════════
+%  SERVING LAYER
+% ════════════════════════════════════════════════════════════════
+\node[api, below=2.8cm of mlflow] (api)
+  {\textbf{FastAPI}\\[2pt]
+   {\scriptsize POST /predict}\\
+   {\scriptsize GET /health · /model-info}};
+\node[portlabel, below left=1pt and 1pt of api.north east, anchor=north east]
+  {:8000};
+
+\node[ui, below=1.4cm of api] (ui)
+  {\textbf{Streamlit}\\[2pt]
+   {\scriptsize Web UI}\\
+   {\scriptsize 20 categories}};
+\node[portlabel, below left=1pt and 1pt of ui.north east, anchor=north east]
+  {:8501};
+
+% MLflow → API (champion model)
+\draw[arrow=apiBg!80]
+  (mlflow.south) -- (api.north)
+  node[midway, left=3pt, techlabel, align=right]
+    {load model\\@champion alias};
+
+% API → UI
+\draw[arrow=uiBg!80]
+  (api.south) -- (ui.north)
+  node[midway, right=3pt, techlabel] {REST calls};
+
+% ════════════════════════════════════════════════════════════════
+%  USER
+% ════════════════════════════════════════════════════════════════
+\node[below=1cm of ui, font=\sffamily\small] (user) {%
+  \begin{tikzpicture}[scale=0.4]
+    \draw[fill=black!60, draw=none] (0,1.7) circle (0.35);
+    \draw[line width=1.2pt, black!60] (0,1.35) -- (0,0.5);
+    \draw[line width=1.2pt, black!60] (-0.5,1.1) -- (0.5,1.1);
+    \draw[line width=1.2pt, black!60] (0,0.5) -- (-0.4,0);
+    \draw[line width=1.2pt, black!60] (0,0.5) -- (0.4,0);
+  \end{tikzpicture}%
+  \\\textbf{User}};
+\draw[arrow] (user.north) -- (ui.south);
+
+% ════════════════════════════════════════════════════════════════
+%  BACKGROUND ZONES
+% ════════════════════════════════════════════════════════════════
+\begin{scope}[on background layer]
+  % Orchestration zone
+  \node[zone, fill=orchBg!40,
+        fit=(airflow)] (orchZone) {};
+  \node[grouplabel, above left=2pt and 0pt of orchZone.north east]
+    {Orchestration};
+
+  % Pipeline zone
+  \node[zone, fill=pipelineBg!6,
+        fit=(download)(preprocess)(train),
+        inner sep=14pt] (pipeZone) {};
+  \node[grouplabel, above left=2pt and 0pt of pipeZone.north east]
+    {ML Pipeline (containerised)};
+
+  % Storage zone
+  \node[zone, fill=storageBg!60,
+        fit=(minio)(mlflow),
+        inner sep=14pt] (storeZone) {};
+  \node[grouplabel, above right=2pt and 4pt of storeZone.north west]
+    {Storage \& Tracking};
+
+  % Serving zone
+  \node[zone, fill=servingBg!60,
+        fit=(api)(ui),
+        inner sep=14pt] (serveZone) {};
+  \node[grouplabel, above right=2pt and 4pt of serveZone.north west]
+    {Serving Layer};
+\end{scope}
+
+% ════════════════════════════════════════════════════════════════
+%  INFRA LABEL
+% ════════════════════════════════════════════════════════════════
+\node[
+  draw=k8sBg!60, line width=1pt, rounded corners=10pt, dashed,
+  fit=(orchZone)(pipeZone)(storeZone)(serveZone),
+  inner sep=20pt,
+] (infraBox) {};
+\node[
+  fill=white, font=\sffamily\bfseries\footnotesize, text=k8sBg,
+  above=0pt of infraBox.south,
+  inner sep=3pt,
+] {Docker Compose\enspace/\enspace Kubernetes (Kind)};
+
+% ════════════════════════════════════════════════════════════════
+%  TECHNOLOGY ANNOTATIONS (right margin)
+% ════════════════════════════════════════════════════════════════
+\coordinate (rightEdge) at ($(infraBox.east)+(0.4,0)$);
+
+\node[techlabel, anchor=west, align=left] at (rightEdge |- airflow)
+  {Airflow 2.10.5\\SequentialExecutor · SQLite};
+
+\node[techlabel, anchor=west, align=left] at (rightEdge |- train)
+  {scikit-learn 1.8\\TF-IDF + SGD / NB / LR\\Python 3.12};
+
+% Single annotation for the storage row (midpoint between minio & mlflow)
+\coordinate (storageMid) at ($(minio.east)!0.5!(mlflow.west)$);
+\node[techlabel, anchor=west, align=left] at (rightEdge |- storageMid)
+  {MinIO (S3v4) · boto3\\MLflow 2.19 · --serve-artifacts};
+
+\node[techlabel, anchor=west, align=left] at (rightEdge |- api)
+  {FastAPI 0.115+ · Uvicorn};
+
+\node[techlabel, anchor=west, align=left] at (rightEdge |- ui)
+  {Streamlit};
+
+\end{tikzpicture}
+\end{document}
